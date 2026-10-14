@@ -1,6 +1,10 @@
 # Discovery Warm Lead Parser
 
 <div align="center">
+<img src="assets/banner.svg" alt="Discovery System — Warm Lead Parser — скоринг 0–100, цена лида" width="100%">
+</div>
+
+<div align="center">
 
 **Находит клиентов в открытых источниках и говорит, с кем связаться первым.**
 

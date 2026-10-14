@@ -1,42 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
-<defs>
-  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0" stop-color="#141745"/>
-    <stop offset="1" stop-color="#0B0D3B"/>
-  </linearGradient>
-</defs>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#141745"/><stop offset="1" stop-color="#0B0D3B"/>
+</linearGradient></defs>
 <rect width="1280" height="640" fill="url(#bg)"/>
+<circle cx="1180" cy="110" r="60" fill="none" stroke="#3a4280" stroke-width="1.5" opacity="0.5"/><circle cx="1180" cy="110" r="95" fill="none" stroke="#3a4280" stroke-width="1.5" opacity="0.5"/><circle cx="1180" cy="110" r="130" fill="none" stroke="#3a4280" stroke-width="1.5" opacity="0.5"/><circle cx="1150" cy="92" r="5" fill="#f0a832"/><circle cx="1196" cy="128" r="4" fill="#f0a832" opacity="0.75"/><circle cx="1122" cy="136" r="3.5" fill="#7ee0a3" opacity="0.8"/>
+<g>
+<rect x="48" y="100" width="600" height="322" rx="12" fill="#0d1030" stroke="#2a3060" stroke-width="1.5"/>
+<text x="70" y="142" font-family="Consolas,Menlo,monospace" font-size="20" font-weight="600" fill="#6aa9e8">$ ds warm-lead-parser --run</text>
+<text x="70" y="180" font-family="Consolas,Menlo,monospace" font-size="20" font-weight="400" fill="#7d87b8">[00:01] fl.ru ......... 7 постов OK</text>
+<text x="70" y="218" font-family="Consolas,Menlo,monospace" font-size="20" font-weight="400" fill="#7d87b8">[00:02] kwork.ru ...... 12 брифов OK</text>
+<text x="70" y="256" font-family="Consolas,Menlo,monospace" font-size="20" font-weight="400" fill="#7d87b8">[00:04] avito ......... 100 карточек OK</text>
+<text x="70" y="294" font-family="Consolas,Menlo,monospace" font-size="20" font-weight="400" fill="#e8ecf8">[00:06] скоринг 173 → 14 → 3</text>
+<text x="70" y="332" font-family="Consolas,Menlo,monospace" font-size="20" font-weight="600" fill="#f0a832">[00:07] тёплый лид — балл 75</text>
+<text x="70" y="370" font-family="Consolas,Menlo,monospace" font-size="20" font-weight="600" fill="#7ee0a3">[00:07] цена лида 875₽ · ×8 [OK]</text>
 
-<!-- терминальный лог слева -->
-<g font-family="Consolas, Menlo, monospace" font-size="26" fill="#7A80C9">
-  <text x="80" y="150">$ ds warm-lead-parser --run</text>
-  <text x="80" y="200" fill="#5A5FA0">[00:01] fl.ru ............. 7 постов OK</text>
-  <text x="80" y="245" fill="#5A5FA0">[00:02] kwork.ru .......... 12 брифов OK</text>
-  <text x="80" y="290" fill="#5A5FA0">[00:04] avito (camoufox) .. 100 карточек OK</text>
-  <text x="80" y="335" fill="#5A5FA0">[00:06] скоринг ........... 173 → 14 → 3</text>
-  <text x="80" y="380" fill="#FFB224">[00:07] 🔥 тёплый лид найден — балл 75</text>
-  <text x="80" y="430" fill="#3DDC84">[00:07] цена лида: 875₽ · окупаемость ×8 [OK]</text>
-  <rect x="82" y="452" width="18" height="28" fill="#FFB224">
-    <animate attributeName="opacity" values="1;0;1" dur="1.2s" repeatCount="indefinite"/>
-  </rect>
 </g>
+<text x="720" y="180" font-family="Segoe UI,Arial,sans-serif" font-size="26" font-weight="600" fill="#8f96c4">DISCOVERY SYSTEM</text>
+<text x="720" y="272" font-family="Segoe UI,Arial,sans-serif" font-size="72" font-weight="700" fill="#ffffff">Warm Lead</text>
+<text x="720" y="356" font-family="Segoe UI,Arial,sans-serif" font-size="72" font-weight="700" fill="#f0a832">Parser</text>
+<rect x="704" y="406" width="10" height="30" fill="#f0a832"/>
+<text x="720" y="436" font-family="Segoe UI,Arial,sans-serif" font-size="25" fill="#c9cff0">Находит клиентов в открытых источниках.</text>
+<text x="720" y="480" font-family="Segoe UI,Arial,sans-serif" font-size="25" fill="#c9cff0">Скоринг 0–100 · цена лида в ₽ · ноль логинов</text>
 
-<!-- заголовок справа -->
-<g font-family="'IBM Plex Sans', Arial, sans-serif">
-  <text x="700" y="270" font-size="64" font-weight="700" fill="#FFFFFF">Discovery</text>
-  <text x="700" y="345" font-size="64" font-weight="700" fill="#FFB224">Warm Lead Parser</text>
-  <text x="700" y="400" font-size="26" fill="#7A80C9">Находит клиентов в открытых источниках.</text>
-  <text x="700" y="438" font-size="26" fill="#7A80C9">Скоринг 0-100 · экономика · ноль логинов.</text>
-</g>
-
-<!-- мини-радар справа сверху -->
-<g transform="translate(1050,120) scale(0.55)">
-  <g stroke="#3A3F7A" stroke-width="2" opacity="0.55" fill="none">
-    <path d="M 96 240 A 144 144 0 0 1 240 96"/>
-    <path d="M 60 240 A 180 180 0 0 1 240 60"/>
-  </g>
-  <circle cx="316" cy="164" r="9" fill="#FFB224"/>
-  <circle cx="352" cy="240" r="7" fill="#FFB224" opacity="0.85"/>
-  <rect x="228" y="228" width="24" height="24" fill="#FFB224"/>
-</g>
 </svg>
