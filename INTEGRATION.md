@@ -100,7 +100,7 @@ result = skillkit.run({"text": "..."})     # чистый dict
 ```json
 {
   "mcpServers": {
-    "warm-lead-parser": { "command": "python", "args": ["/абсолютный/путь/integrations/mcp_server.py"] }
+    "ds_warm-lead-parser": { "command": "python", "args": ["/абсолютный/путь/integrations/mcp_server.py"] }
   }
 }
 ```

@@ -1,5 +1,5 @@
 ---
-name: warm-lead-parser
+name: ds_warm-lead-parser
 description: "Парсер тёплых лидов из открытых источников, скоринг 0-100"
 version: 2.5.0
 author: Victor Zaitsev (r0undm1dn1ghty-star)

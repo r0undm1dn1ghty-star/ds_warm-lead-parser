@@ -1,4 +1,6 @@
-# Discovery Warm Lead Parser
+# ds_warm-lead-parser
+
+**Discovery Warm Lead Parser**
 
 <div align="center">
 <img src="assets/banner.svg" alt="Discovery System — Warm Lead Parser — скоринг 0–100, цена лида" width="100%">
@@ -21,6 +23,20 @@
 > **Warm Lead Parser не спамит и не «парсит всё».** Читает только открытые публичные ленты, оценивает каждый пост по готовности платить и отдаёт короткий список: с кем связаться сегодня и почему. Каждый отчёт считает цену тёплого лида в ₽.
 
 ---
+
+## Установка и использование
+
+Скилл ставится копированием папки (или `SKILL.md`) в `.claude/skills/` / `.hermes/skills/` — и живёт под именем **`ds_warm-lead-parser`**. В чате агенту достаточно сказать: «запусти ds_warm-lead-parser для …» — имя уникально и не конфликтует с чужими скиллами.
+
+```bash
+# вариант 1 — клон репо целиком
+git clone https://github.com/r0undm1dn1ghty-star/discovery-warm-lead-parser.git && cp -r discovery-warm-lead-parser/.claude/skills/* ~/.claude/skills/ 2>/dev/null || cp discovery-warm-lead-parser/SKILL.md ~/.claude/skills/ds_warm-lead-parser/SKILL.md
+
+# вариант 2 — только SKILL.md (у кого он есть в корне)
+cp discovery-warm-lead-parser/SKILL.md ~/.claude/skills/ds_warm-lead-parser/SKILL.md
+```
+
+Все скиллы Discovery System — с префиксом **`ds_`**: `ds_pnl-check`, `ds_spiral-maturity`, `ds_geo-audit`, `ds_market-evidence`, `ds_warm-lead-parser`, `ds_content-radar`. Комплект и связка — [discovery-system.ru](https://discovery-system.ru).
 
 ## Зачем это бизнесу
 
