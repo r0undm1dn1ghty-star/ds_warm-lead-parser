@@ -30,7 +30,7 @@
 
 ```bash
 # вариант 1 — клон репо целиком
-git clone https://github.com/r0undm1dn1ghty-star/discovery-warm-lead-parser.git && cp -r discovery-warm-lead-parser/.claude/skills/* ~/.claude/skills/ 2>/dev/null || cp discovery-warm-lead-parser/SKILL.md ~/.claude/skills/ds_warm-lead-parser/SKILL.md
+git clone https://github.com/r0undm1dn1ghty-star/ds_warm-lead-parser.git && cp -r discovery-warm-lead-parser/.claude/skills/* ~/.claude/skills/ 2>/dev/null || cp discovery-warm-lead-parser/SKILL.md ~/.claude/skills/ds_warm-lead-parser/SKILL.md
 
 # вариант 2 — только SKILL.md (у кого он есть в корне)
 cp discovery-warm-lead-parser/SKILL.md ~/.claude/skills/ds_warm-lead-parser/SKILL.md

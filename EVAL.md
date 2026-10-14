@@ -71,7 +71,7 @@ ground truth) — 20.09.2026 и 26.09.2026.
 ## Проверка
 
 ```bash
-git clone https://github.com/r0undm1dn1ghty-star/discovery-warm-lead-parser && cd discovery-warm-lead-parser
+git clone https://github.com/r0undm1dn1ghty-star/ds_warm-lead-parser && cd ds_warm-lead-parser
 python integrations/sources.py --selftest          # 12/12, включая "чужая ниша не проходит"
 python integrations/sources.py --json --kw 'парсер,бот' <<'EOF'
 Разработка парсеров для двух площадок госзакупок
