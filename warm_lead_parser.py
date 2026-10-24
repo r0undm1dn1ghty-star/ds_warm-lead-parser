@@ -28,6 +28,16 @@ UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
       "Accept-Encoding": "gzip, deflate"}
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# ------------------------------------------------- обогащение по госисточникам
+# Опционально (флаг --enrich): по тексту объявления вытаскиваем ИНН/название/домен и
+# добираем в ЕГРЮЛ, реестре МСП и на «Работе России» — кто это, какая отрасль,
+# жив ли бизнес, ФИО руководителя и рабочий email. Без ключей и регистраций.
+sys.path.insert(0, os.path.join(HERE, "integrations"))
+try:
+    import enrich as _enrich
+except Exception:  # модуль мог не доехать — парсер обязан работать и без него
+    _enrich = None
+
 # ---------------------------------------------------------------- конфиг ниш
 def load_niches():
     for fn in ("niches-50.json",):
@@ -449,7 +459,7 @@ def score_post(p, kws):
     return max(0, min(100, s)), "; ".join(why)
 
 # ---------------------------------------------------------------- run
-def run_niche(key, niche, full=False):
+def run_niche(key, niche, full=False, enrich_top=0):
     t0 = time.time()
     posts = []
     src_ok, src_err = [], []   # v2.4: живость источников — бенчмарк скорости привязан к ним
@@ -502,6 +512,24 @@ def run_niche(key, niche, full=False):
     market = [p for p in scored if p["source"].startswith("avito/")]
     hot = [p for p in leads if p["score"] >= 60]
     warm = [p for p in leads if 40 <= p["score"] < 60]
+    # Обогащение топ-тёплых по открытым госисточникам: из текста объявления достаём
+    # ИНН/название/домен и добираем юрлицо, отрасль, живость, руководителя, email.
+    # Медленный шаг (ЕГРЮЛ + МСП + «Работа России»), поэтому только по явному флагу
+    # и только по верхушке — обогащать весь поток бессмысленно и грубо к госсервисам.
+    enriched = []
+    if enrich_top and _enrich:
+        # Если «горячих» меньше, чем просили обогатить, добираем из тёплых: иначе на
+        # реальном потоке (🔥 часто 0) флаг молча не делает ничего.
+        pool = hot[:enrich_top] if len(hot) >= enrich_top else (hot + warm)[:enrich_top]
+        for p in pool:
+            try:
+                card = _enrich.enrich(text=p.get("text", ""))
+                enriched.append({"url": p.get("url"), "score": p["score"], "card": card})
+                state = "🟢 найден" if card.get("found") else "⚪ не найден"
+                print(f"  [enrich] {state} {p.get('score')} · {(p.get('url') or '')[:56]}")
+            except Exception as e:
+                print(f"  [enrich] ERR {str(e)[:60]}")
+            time.sleep(1.2)  # пауза: госсервисы роняют серии запросов
     dt = time.time() - t0
     # v2.4: метрики отчёта — сколько 🔥 назвали деньги (главный предиктор «тёплоты»)
     # и сколько отсеяно как вакансии/резюме (HR-фильтр)
@@ -514,6 +542,7 @@ def run_niche(key, niche, full=False):
             "hot": len(hot), "warm": len(warm), "market": len(market), "sec": round(dt),
             "src_ok": len(src_ok), "src_err": len(src_err), "src_err_names": list(src_err),
             "hot_money": hot_with_money,
+            "enriched": enriched,
             "hot_items": [{k: p[k] for k in ("score", "source", "text", "url", "why")} for p in hot[:5]],
             "warm_items": [{k: p[k] for k in ("score", "source", "text", "url", "why")} for p in warm[:5]]}
 
@@ -550,6 +579,23 @@ def render_report(results):
                 rep.append(f"  - {p['url']}")
                 rep.append(f"  - {p['why']}")
             rep.append("")
+    # Кто стоит за объявлением: проверка по открытым госисточникам (флаг --enrich).
+    # Именно этот блок отвечает на вопрос «живая это компания или однодневка» —
+    # данные берутся из госреестров, а не из обещаний самого заказчика.
+    if any(r.get("enriched") for r in results):
+        rep.append("## 🏢 Кто за объявлением — проверка по госисточникам")
+        rep.append("")
+        rep.append("_ЕГРЮЛ · реестр МСП · «Работа России». Без ключей, регистраций и оплаты._")
+        rep.append("")
+        for r in results:
+            if not r.get("enriched"):
+                continue
+            rep.append(f"### {r['name']}")
+            for e in r["enriched"]:
+                rep.append(_enrich.format_card(e["card"]))
+                if e.get("url"):
+                    rep.append(f"  - объявление: {e['url']}")
+                rep.append("")
     return "\n".join(rep)
 
 def main():
@@ -560,15 +606,29 @@ def main():
             print(f"{i:2}. {k:30} {v['name']}")
         return
     full = "--full" in args
+    # --enrich [N]: обогатить топ-N тёплых лидов по госисточникам (по умолчанию 3).
+    # Шаг медленный и стучится в госсервисы — включать осознанно, не по умолчанию.
+    enrich_top = 0
+    for a in args:
+        if a == "--enrich":
+            enrich_top = 3
+        elif a.startswith("--enrich-top="):
+            try:
+                enrich_top = max(0, int(a.split("=", 1)[1]))
+            except ValueError:
+                pass
     args = [a for a in args if not a.startswith("--")]
     keys = [args[0]] if args and args[0] in niches else list(niches.keys())
     if args and args[0] not in niches:
         print(f"!! ниша '{args[0]}' не найдена (--list для списка)"); return
+    if enrich_top and not _enrich:
+        print("!! integrations/enrich.py не найден — обогащение выключено"); enrich_top = 0
     results = []
-    print(f"== Warm Lead Parser v2.4: {len(keys)} ниш, режим {'полный' if full else 'быстрый'} ==")
+    print(f"== Warm Lead Parser v2.5: {len(keys)} ниш, режим {'полный' if full else 'быстрый'}"
+          + (f", обогащение топ-{enrich_top}" if enrich_top else "") + " ==")
     for k in keys:
         print(f"\n— {niches[k]['name']} —")
-        results.append(run_niche(k, niches[k], full=full))
+        results.append(run_niche(k, niches[k], full=full, enrich_top=enrich_top))
     report = render_report(results)
     fn = os.path.join(HERE, f"warm-lead-report-{datetime.now(MSK).strftime('%Y-%m-%d_%H%M')}.md")
     open(fn, "w", encoding="utf-8").write(report)
