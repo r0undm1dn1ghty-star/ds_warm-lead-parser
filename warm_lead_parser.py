@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Discovery Warm Lead Parser v2.5 — мульти-нишевой движок.
+"""Discovery Warm Lead Parser v2.7 — мульти-нишевой движок.
 Один файл, stdlib-only. 53 ниши из niches-50.json (все источники фактчек-2026-09-11).
 
 Запуск:
@@ -8,7 +8,7 @@
   python warm_lead_parser.py --niche chatbots       # одна ниша (полный режим с Kwork)
   python warm_lead_parser.py --list                 # список ниш
   python warm_lead_parser.py --full chatbots        # одна ниша, все источники включая Авито (3-4 мин)
-Источники: FL.ru (категории) · Weblancer (категории) · Kwork (c=ID через r.jina.ai) ·
+Источники: FL.ru RSS (60 заказов с текстами одним запросом) + HTML-категория как добор · Weblancer · Kwork (через r.jina.ai) ·
            TG-каналы (t.me/s/ превью) · Kadrof · poisk-pro.ru · searchengines.guru ·
            illustrators.ru · Авито (Camoufox стелс, market-signal).
 freelance.ru исключён: пер-нишевой фильтрации нет (фактчек 09-11).
@@ -72,6 +72,79 @@ def get(u, timeout=12, headers=None):
 
 # ---------------------------------------------------------------- сборщики
 def fetch_fl(category, niche_key):
+    """FL.ru через HTML категории. Оставлен как fallback: регулярно падает в таймаут."""
+    return fetch_fl_html(category, niche_key)
+
+
+def _rss_time(s):
+    """RSS pubDate ('Mon, 26 Oct 2026 18:50:35 GMT') -> ISO в MSK."""
+    from email.utils import parsedate_to_datetime
+    try:
+        return parsedate_to_datetime(s).astimezone(MSK).isoformat()
+    except Exception:
+        return None
+
+
+def fetch_fl_rss(niche_key="mix", limit=80):
+    """FL.ru через официальную RSS-ленту (v2.7).
+
+    Почему это лучше HTML-категорий: одна лента отдаёт сразу 60 заказов с заголовком,
+    описанием и датой, официальным каналом — без парсинга разметки и без тех таймаутов,
+    на которых прежний сборщик падал в каждом втором прогоне.
+    """
+    raw = get("https://www.fl.ru/rss/all.xml", timeout=15)
+
+    def _tag(block, tag):
+        m = re.search(r"<%s>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</%s>" % (tag, tag), block, re.S)
+        if not m:
+            return ""
+        return html.unescape(re.sub(r"<[^>]+>", " ", m.group(1))).strip()
+
+    out = []
+    for block in re.findall(r"<item>(.*?)</item>", raw, re.S)[:limit]:
+        title = _tag(block, "title")
+        desc = _tag(block, "description")
+        link = _tag(block, "link")
+        if not (title or desc):
+            continue
+        out.append({
+            "source": "fl/rss",
+            "text": (title + ". " + desc).strip() if title else desc,
+            "url": link,
+            "time": _rss_time(_tag(block, "pubDate")),
+            "niche": niche_key,
+        })
+    return out
+
+
+def dedup_posts(posts):
+    """Схлопнуть один и тот же заказ, найденный на нескольких площадках (v2.7).
+
+    Один заказ часто висит на бирже, в RSS и в трёх Telegram-каналах: сейчас это
+    четыре разных лида и четыре раза потраченное внимание. Ключ — отпечаток
+    начала текста без пунктуации; в дублирующей записи остаётся ссылка на источник,
+    чтобы было видно, где ещё искать отклик.
+    """
+    seen, out, merged = {}, [], 0
+    for p in posts:
+        fp = re.sub(r"[^а-яёa-z0-9 ]", "", (p.get("text") or "").lower().replace("ё", "е"))
+        fp = re.sub(r"\s+", " ", fp).strip()[:70]
+        if not fp:
+            out.append(p)
+            continue
+        if fp in seen:
+            host = seen[fp]
+            url = p.get("url")
+            if url and url not in host.setdefault("also_on", []):
+                host["also_on"].append(url)
+            merged += 1
+        else:
+            seen[fp] = p
+            out.append(p)
+    return out, merged
+
+
+def fetch_fl_html(category, niche_key):
     """FL.ru: карточки проектов. Читаем заголовок + бюджет + описание,
     иначе скоринг не видит деньги и детали (проверено на живых данных)."""
     out = []
@@ -471,9 +544,20 @@ def run_niche(key, niche, full=False, enrich_top=0):
             src_ok.append(f"{tag}+{len(posts)-n}")
         except Exception as e:
             src_err.append(f"{tag} ERR {str(e)[:40]}")
+    def _last(tag):
+        """Результат конкретного источника: 'fl/rss+60' не должен подменять 'fl'."""
+        for x in reversed(src_ok + src_err):
+            if x.startswith(tag + "+") or x.startswith(tag + " "):
+                return x
+        return ""
+    if niche.get("fl") or True:
+        # v2.7: FL.ru берём из официальной RSS-ленты (60 заказов с текстами одним запросом),
+        # а HTML-категорию — как добор. Прежний HTML-сборщик падал в таймаут почти в каждом прогоне.
+        _src(fetch_fl_rss, "fl/rss", key)
+        print(f"  [fl/rss] {_last('fl/rss')}")
     if niche.get("fl"):
         _src(fetch_fl, "fl", niche["fl"], key)
-        print(f"  [fl] {src_ok[-1] if src_ok and src_ok[-1].startswith('fl') else src_err[-1] if src_err and src_err[-1].startswith('fl') else ''}")
+        print(f"  [fl] {_last('fl')}")
     if niche.get("wl"):
         _src(fetch_weblancer, "wl", niche["wl"], key)
         print(f"  [wl] {src_ok[-1] if src_ok and src_ok[-1].startswith('wl') else src_err[-1] if src_err and src_err[-1].startswith('wl') else ''}")
@@ -503,6 +587,9 @@ def run_niche(key, niche, full=False, enrich_top=0):
         _src(fetch_avito, "avito", niche["queries"], key)
         print(f"  [avito] {src_ok[-1] if src_ok and src_ok[-1].startswith('avito') else src_err[-1] if src_err and src_err[-1].startswith('avito') else ''}")
     kws = build_kws(niche)
+    # v2.7: один заказ часто висит на бирже, в RSS и в трёх Telegram-каналах.
+    # Схлопываем до одного лида, сохраняя ссылки на остальные площадки.
+    posts, merged = dedup_posts(posts)
     scored = []
     for p in posts:
         sc, why = score_post(p, kws)
@@ -537,9 +624,10 @@ def run_niche(key, niche, full=False, enrich_top=0):
     hot_with_money = sum(1 for p in hot if any(k in p["text"].lower() for k in money_keys))
     src_line = f"источники {len(src_ok)} ок / {len(src_err)} таймаут" + (f" ({', '.join(src_err)})" if src_err else "")
     print(f"  → {niche['name']}: {len(posts)} постов → {len(leads)} в нише → 🔥{len(hot)} 🌤{len(warm)} | "
-          f"🔥 с деньгами {hot_with_money}/{len(hot)} | {src_line} | {dt:.0f}с")
+          f"🔥 с деньгами {hot_with_money}/{len(hot)} | схлопнуто дублей {merged} | {src_line} | {dt:.0f}с")
     return {"key": key, "name": niche["name"], "total": len(posts), "leads": len(leads),
             "hot": len(hot), "warm": len(warm), "market": len(market), "sec": round(dt),
+            "merged": merged,
             "src_ok": len(src_ok), "src_err": len(src_err), "src_err_names": list(src_err),
             "hot_money": hot_with_money,
             "enriched": enriched,
@@ -624,7 +712,7 @@ def main():
     if enrich_top and not _enrich:
         print("!! integrations/enrich.py не найден — обогащение выключено"); enrich_top = 0
     results = []
-    print(f"== Warm Lead Parser v2.5: {len(keys)} ниш, режим {'полный' if full else 'быстрый'}"
+    print(f"== Warm Lead Parser v2.7: {len(keys)} ниш, режим {'полный' if full else 'быстрый'}"
           + (f", обогащение топ-{enrich_top}" if enrich_top else "") + " ==")
     for k in keys:
         print(f"\n— {niches[k]['name']} —")
