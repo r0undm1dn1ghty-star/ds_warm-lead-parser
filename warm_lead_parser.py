@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Discovery Warm Lead Parser v2.7 — мульти-нишевой движок.
+"""Discovery Warm Lead Parser v2.8 — мульти-нишевой движок.
 Один файл, stdlib-only. 53 ниши из niches-50.json (все источники фактчек-2026-09-11).
 
 Запуск:
@@ -631,7 +631,9 @@ def run_niche(key, niche, full=False, enrich_top=0):
             "src_ok": len(src_ok), "src_err": len(src_err), "src_err_names": list(src_err),
             "hot_money": hot_with_money,
             "enriched": enriched,
-            "hot_items": [{k: p[k] for k in ("score", "source", "text", "url", "why")} for p in hot[:5]],
+            "hot_items": [{**{k: p[k] for k in ("score", "source", "text", "url", "why")},
+                           "contacts": (_enrich.extract_anchors(p.get("text", "")) if _enrich else {})}
+                          for p in hot[:5]],
             "warm_items": [{k: p[k] for k in ("score", "source", "text", "url", "why")} for p in warm[:5]]}
 
 def render_report(results):
@@ -653,11 +655,11 @@ def render_report(results):
     rep.append(f"Экономика: ~{my_min} мин работы ({cost:.0f}₽ при ставке {rate}₽/ч; своя ставка — WLP_HOURLY) · "
                f"цена тёплого лида ≈ " + (f"{cpl:.0f}₽" if cpl else "∞ (0 тёплых)"))
     rep.append("")
-    rep.append("| Ниша | Всего | В нише | 🔥 | 🌤 | 🔥 с деньгами | Источники | сек |")
-    rep.append("|---|---|---|---|---|---|---|---|")
+    rep.append("| Ниша | Всего | В нише | 🔥 | 🌤 | 🔥 с деньгами | Схлопнуто | Источники | сек |")
+    rep.append("|---|---|---|---|---|---|---|---|---|")
     for r in sorted(results, key=lambda x: -(x["hot"] * 10 + x["warm"])):
         src_col = f"{r.get('src_ok', 0)} ок / {r.get('src_err', 0)} таймаут"
-        rep.append(f"| {r['name']} | {r['total']} | {r['leads']} | {r['hot']} | {r['warm']} | {r.get('hot_money', 0)}/{r['hot']} | {src_col} | {r['sec']} |")
+        rep.append(f"| {r['name']} | {r['total']} | {r['leads']} | {r['hot']} | {r['warm']} | {r.get('hot_money', 0)}/{r['hot']} | {r.get('merged', 0)} | {src_col} | {r['sec']} |")
     rep.append("")
     for r in results:
         if r["hot_items"]:
@@ -666,6 +668,20 @@ def render_report(results):
                 rep.append(f"- **[{p['score']}]** {p['source']} | {p['text'][:100]}")
                 rep.append(f"  - {p['url']}")
                 rep.append(f"  - {p['why']}")
+                # v2.8: контакты, оставленные прямо в посте, — часто единственный способ
+                # написать заказчику из Telegram-канала, где нет профиля и рейтинга.
+                ct = p.get("contacts") or {}
+                bits = []
+                if ct.get("email"):
+                    bits.append("почта: " + ", ".join(ct["email"][:2]))
+                if ct.get("phone"):
+                    bits.append("тел: +" + ct["phone"][0])
+                if ct.get("tg"):
+                    bits.append("tg: @" + ct["tg"][0].lstrip("@"))
+                if ct.get("domain"):
+                    bits.append("сайт: " + ct["domain"][0])
+                if bits:
+                    rep.append(f"  - контакты в посте: {' · '.join(bits)}")
             rep.append("")
     # Кто стоит за объявлением: проверка по открытым госисточникам (флаг --enrich).
     # Именно этот блок отвечает на вопрос «живая это компания или однодневка» —
@@ -712,7 +728,7 @@ def main():
     if enrich_top and not _enrich:
         print("!! integrations/enrich.py не найден — обогащение выключено"); enrich_top = 0
     results = []
-    print(f"== Warm Lead Parser v2.7: {len(keys)} ниш, режим {'полный' if full else 'быстрый'}"
+    print(f"== Warm Lead Parser v2.8: {len(keys)} ниш, режим {'полный' if full else 'быстрый'}"
           + (f", обогащение топ-{enrich_top}" if enrich_top else "") + " ==")
     for k in keys:
         print(f"\n— {niches[k]['name']} —")
