@@ -4,3 +4,6 @@ __pycache__/
 *.pyc
 warm-lead-report-*.md
 !reports/warm-lead-report-*.md
+
+# история прогонов — локальная, не в репозиторий
+seen.json

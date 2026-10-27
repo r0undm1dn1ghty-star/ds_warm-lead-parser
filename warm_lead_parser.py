@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Discovery Warm Lead Parser v2.8 — мульти-нишевой движок.
+"""Discovery Warm Lead Parser v2.9 — мульти-нишевой движок.
 Один файл, stdlib-only. 53 ниши из niches-50.json (все источники фактчек-2026-09-11).
 
 Запуск:
@@ -37,6 +37,35 @@ try:
     import enrich as _enrich
 except Exception:  # модуль мог не доехать — парсер обязан работать и без него
     _enrich = None
+try:
+    import rules as _rules
+except Exception:
+    _rules = None
+
+# ---------------------------------------------------------------- история прогонов
+# Один и тот же заказ приходит из разных каналов неделю подряд. Чтобы отчёт не
+# превращался в повтор прошлого, помним отпечатки и помечаем новизну.
+HISTORY_FILE = os.path.join(HERE, "seen.json")
+
+
+def _fp(text):
+    import hashlib
+    t = re.sub(r"[^а-яёa-z0-9 ]", "", (text or "").lower().replace("ё", "е"))
+    return hashlib.md5(re.sub(r"\s+", " ", t).strip()[:120].encode()).hexdigest()[:16]
+
+
+def load_history():
+    try:
+        return json.load(open(HISTORY_FILE, encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_history(hist):
+    try:
+        json.dump(hist, open(HISTORY_FILE, "w", encoding="utf-8"), ensure_ascii=False)
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------- конфиг ниш
 def load_niches():
@@ -505,10 +534,20 @@ def build_kws(niche):
 def score_post(p, kws):
     txt = re.sub(r'\s+', ' ', p.get("text", "").lower().replace('ё', 'е'))
     if len(txt) < 30: return 0, "коротко"
+    # v2.9: правила с приоритетами (integrations/rules.py). Пришли на смену плоскому
+    # стоп-списку: отсев только при настоящем шуме, при конфликте побеждает сигнал покупки.
+    rules_delta, rules_why = 0, ""
+    if _rules:
+        drop, rules_delta, hits = _rules.apply_rules(p.get("text", ""))
+        if drop:
+            return 0, f"правило: {drop}"
+        rules_why = _rules.describe(hits)
     if re.search(r'#резюме|#resume|ищу работу|в поиске работы|резюме [a-z@]', txt): return 0, "резюме (не заказ)"
     if is_vacancy(txt): return 0, "вакансия (наём, не заказ)"
     strong, med = kw_search(txt, kws["strong"]), kw_search(txt, kws["medium"])
     s, why = 0, []
+    if rules_why:
+        s += rules_delta
     if strong: s += 40; why.append(f"точное: {', '.join(strong[:3])}")
     elif len(med) >= 2: s += 30; why.append(f"ниша по деталям: {', '.join(med[:3])}")
     elif med: s += 15; why.append(f"смежное: {', '.join(med[:3])}")
@@ -529,10 +568,12 @@ def score_post(p, kws):
             elif age_h <= 72: s += 5
             elif age_h > 400: s -= 15; why.append(f"{int(age_h/24)}дн")
         except Exception: pass
+    if rules_why:
+        why.append(rules_why)
     return max(0, min(100, s)), "; ".join(why)
 
 # ---------------------------------------------------------------- run
-def run_niche(key, niche, full=False, enrich_top=0):
+def run_niche(key, niche, full=False, enrich_top=0, use_history=True):
     t0 = time.time()
     posts = []
     src_ok, src_err = [], []   # v2.4: живость источников — бенчмарк скорости привязан к ним
@@ -594,7 +635,23 @@ def run_niche(key, niche, full=False, enrich_top=0):
     for p in posts:
         sc, why = score_post(p, kws)
         if sc > 0: scored.append({**p, "score": sc, "why": why})
-    scored.sort(key=lambda x: -x["score"])
+    # v2.9: история — один и тот же заказ приходит неделю подряд из разных каналов.
+    # Новые лиды поднимаем выше при равном скоре: свежий заказ важнее подогретого.
+    hist = load_history() if use_history else {}
+    for p in scored:
+        fp = _fp(p.get("text", ""))
+        p["fp"] = fp
+        prev = hist.get(fp)
+        p["is_new"] = prev is None
+        if prev:
+            try:
+                p["seen_days"] = max(0, (datetime.now(MSK) - datetime.fromisoformat(prev)).days)
+            except Exception:
+                p["seen_days"] = 0
+        hist[fp] = datetime.now(MSK).isoformat()
+    if use_history:
+        save_history(hist)
+    scored.sort(key=lambda x: (-x["score"], not x.get("is_new", True)))
     leads = [p for p in scored if not p["source"].startswith("avito/")]
     market = [p for p in scored if p["source"].startswith("avito/")]
     hot = [p for p in leads if p["score"] >= 60]
@@ -624,15 +681,18 @@ def run_niche(key, niche, full=False, enrich_top=0):
     hot_with_money = sum(1 for p in hot if any(k in p["text"].lower() for k in money_keys))
     src_line = f"источники {len(src_ok)} ок / {len(src_err)} таймаут" + (f" ({', '.join(src_err)})" if src_err else "")
     print(f"  → {niche['name']}: {len(posts)} постов → {len(leads)} в нише → 🔥{len(hot)} 🌤{len(warm)} | "
-          f"🔥 с деньгами {hot_with_money}/{len(hot)} | схлопнуто дублей {merged} | {src_line} | {dt:.0f}с")
+          f"🔥 с деньгами {hot_with_money}/{len(hot)} | схлопнуто {merged} | новых {sum(1 for p in leads if p.get('is_new'))} | {src_line} | {dt:.0f}с")
     return {"key": key, "name": niche["name"], "total": len(posts), "leads": len(leads),
             "hot": len(hot), "warm": len(warm), "market": len(market), "sec": round(dt),
             "merged": merged,
             "src_ok": len(src_ok), "src_err": len(src_err), "src_err_names": list(src_err),
             "hot_money": hot_with_money,
             "enriched": enriched,
+            "new_count": sum(1 for p in leads if p.get("is_new")),
+            "repeat_count": sum(1 for p in leads if not p.get("is_new")),
             "hot_items": [{**{k: p[k] for k in ("score", "source", "text", "url", "why")},
-                           "contacts": (_enrich.extract_anchors(p.get("text", "")) if _enrich else {})}
+                           "contacts": (_enrich.extract_anchors(p.get("text", "")) if _enrich else {}),
+                           "is_new": p.get("is_new", True), "seen_days": p.get("seen_days")}
                           for p in hot[:5]],
             "warm_items": [{k: p[k] for k in ("score", "source", "text", "url", "why")} for p in warm[:5]]}
 
@@ -665,10 +725,11 @@ def render_report(results):
         if r["hot_items"]:
             rep.append(f"## 🔥 {r['name']}")
             for p in r["hot_items"]:
-                rep.append(f"- **[{p['score']}]** {p['source']} | {p['text'][:100]}")
+                mark = "🆕" if p.get("is_new", True) else f"♻ {p.get('seen_days', 0)}д"
+                rep.append(f"- **[{p['score']}]** {mark} | {p['source']} | {p['text'][:100]}")
                 rep.append(f"  - {p['url']}")
                 rep.append(f"  - {p['why']}")
-                # v2.8: контакты, оставленные прямо в посте, — часто единственный способ
+                # v2.9: контакты, оставленные прямо в посте, — часто единственный способ
                 # написать заказчику из Telegram-канала, где нет профиля и рейтинга.
                 ct = p.get("contacts") or {}
                 bits = []
@@ -710,6 +771,13 @@ def main():
             print(f"{i:2}. {k:30} {v['name']}")
         return
     full = "--full" in args
+    use_history = "--no-history" not in args
+    if "--reset-history" in args:
+        try:
+            os.remove(HISTORY_FILE)
+            print("история сброшена")
+        except FileNotFoundError:
+            pass
     # --enrich [N]: обогатить топ-N тёплых лидов по госисточникам (по умолчанию 3).
     # Шаг медленный и стучится в госсервисы — включать осознанно, не по умолчанию.
     enrich_top = 0
@@ -728,11 +796,11 @@ def main():
     if enrich_top and not _enrich:
         print("!! integrations/enrich.py не найден — обогащение выключено"); enrich_top = 0
     results = []
-    print(f"== Warm Lead Parser v2.8: {len(keys)} ниш, режим {'полный' if full else 'быстрый'}"
+    print(f"== Warm Lead Parser v2.9: {len(keys)} ниш, режим {'полный' if full else 'быстрый'}"
           + (f", обогащение топ-{enrich_top}" if enrich_top else "") + " ==")
     for k in keys:
         print(f"\n— {niches[k]['name']} —")
-        results.append(run_niche(k, niches[k], full=full, enrich_top=enrich_top))
+        results.append(run_niche(k, niches[k], full=full, enrich_top=enrich_top, use_history=use_history))
     report = render_report(results)
     fn = os.path.join(HERE, f"warm-lead-report-{datetime.now(MSK).strftime('%Y-%m-%d_%H%M')}.md")
     open(fn, "w", encoding="utf-8").write(report)
