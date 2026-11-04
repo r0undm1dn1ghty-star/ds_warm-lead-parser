@@ -41,6 +41,13 @@ try:
     import rules as _rules
 except Exception:
     _rules = None
+# v3.0: LLM-слой — второй проход по кандидатам. Без ключа WLP_LLM_KEY слой
+# молча выключен и парсер работает как раньше (см. integrations/llm_class.py).
+sys.path.insert(0, os.path.join(HERE, "integrations"))
+try:
+    import llm_class as _llm
+except Exception:
+    _llm = None
 
 # ---------------------------------------------------------------- история прогонов
 # Один и тот же заказ приходит из разных каналов неделю подряд. Чтобы отчёт не
@@ -573,7 +580,7 @@ def score_post(p, kws):
     return max(0, min(100, s)), "; ".join(why)
 
 # ---------------------------------------------------------------- run
-def run_niche(key, niche, full=False, enrich_top=0, use_history=True):
+def run_niche(key, niche, full=False, enrich_top=0, use_history=True, llm_top=0):
     t0 = time.time()
     posts = []
     src_ok, src_err = [], []   # v2.4: живость источников — бенчмарк скорости привязан к ним
@@ -656,6 +663,29 @@ def run_niche(key, niche, full=False, enrich_top=0, use_history=True):
     market = [p for p in scored if p["source"].startswith("avito/")]
     hot = [p for p in leads if p["score"] >= 60]
     warm = [p for p in leads if 40 <= p["score"] < 60]
+    # v3.0: LLM-слой — читает текст кандидата целиком и отсеивает то, что ключам
+    # не отличить (менторство, консультации, «клип с помощью ИИ», разовая ручная
+    # возня). Без ключа — молча пропускаем: скоринг-правила остаются единственным
+    # фильтром, всё работает как в замерах 1–4.
+    llm_rejected = []
+    if llm_top and _llm and _llm.llm_available():
+        pool = (hot + warm)[:llm_top]
+        hot_ids = {id(p) for p in hot}
+        try:
+            verdicts = _llm.classify([p.get("text", "") for p in pool])
+            kept_hot, kept_warm = [], []
+            for p, v in zip(pool, verdicts):
+                p["llm"] = v
+                if v.get("v") == "LEAD":
+                    (kept_hot if id(p) in hot_ids else kept_warm).append(p)
+                else:
+                    p["score"] = 0
+                    p["why"] = (p.get("why", "") + f" | llm: {v.get('why', 'NOT')}")[:160]
+                    llm_rejected.append(p)
+                print(f"  [llm] {v.get('v')} {v.get('why', '')[:34]} · {p.get('text', '')[:52]}")
+            hot, warm = kept_hot, kept_warm
+        except Exception as e:  # noqa: BLE001 — LLM-слой не должен ронять прогон
+            print(f"  [llm] ERR {str(e)[:60]}")
     # Обогащение топ-тёплых по открытым госисточникам: из текста объявления достаём
     # ИНН/название/домен и добираем юрлицо, отрасль, живость, руководителя, email.
     # Медленный шаг (ЕГРЮЛ + МСП + «Работа России»), поэтому только по явному флагу
@@ -690,6 +720,7 @@ def run_niche(key, niche, full=False, enrich_top=0, use_history=True):
             "enriched": enriched,
             "new_count": sum(1 for p in leads if p.get("is_new")),
             "repeat_count": sum(1 for p in leads if not p.get("is_new")),
+            "llm_rejected": len(llm_rejected),
             "hot_items": [{**{k: p[k] for k in ("score", "source", "text", "url", "why")},
                            "contacts": (_enrich.extract_anchors(p.get("text", "")) if _enrich else {}),
                            "is_new": p.get("is_new", True), "seen_days": p.get("seen_days")}
@@ -789,6 +820,20 @@ def main():
                 enrich_top = max(0, int(a.split("=", 1)[1]))
             except ValueError:
                 pass
+    # --llm [N]: второй проход по кандидатам — классификация текста моделью.
+    # Без WLP_LLM_KEY молча пропускается; по умолчанию топ-30.
+    llm_top = 0
+    for a in args:
+        if a == "--llm":
+            llm_top = 30
+        elif a.startswith("--llm-top="):
+            try:
+                llm_top = max(0, int(a.split("=", 1)[1]))
+            except ValueError:
+                pass
+    if llm_top and not (_llm and _llm.llm_available()):
+        print("!! WLP_LLM_KEY не задан — LLM-слой выключен, работает скоринг-правила")
+        llm_top = 0
     args = [a for a in args if not a.startswith("--")]
     keys = [args[0]] if args and args[0] in niches else list(niches.keys())
     if args and args[0] not in niches:
@@ -796,11 +841,12 @@ def main():
     if enrich_top and not _enrich:
         print("!! integrations/enrich.py не найден — обогащение выключено"); enrich_top = 0
     results = []
-    print(f"== Warm Lead Parser v2.9: {len(keys)} ниш, режим {'полный' if full else 'быстрый'}"
-          + (f", обогащение топ-{enrich_top}" if enrich_top else "") + " ==")
+    print(f"== Warm Lead Parser v3.0: {len(keys)} ниш, режим {'полный' if full else 'быстрый'}" +
+          (f", LLM-слой топ-{llm_top}" if llm_top else "") +
+          (f", обогащение топ-{enrich_top}" if enrich_top else "") + " ==")
     for k in keys:
         print(f"\n— {niches[k]['name']} —")
-        results.append(run_niche(k, niches[k], full=full, enrich_top=enrich_top, use_history=use_history))
+        results.append(run_niche(k, niches[k], full=full, enrich_top=enrich_top, use_history=use_history, llm_top=llm_top))
     report = render_report(results)
     fn = os.path.join(HERE, f"warm-lead-report-{datetime.now(MSK).strftime('%Y-%m-%d_%H%M')}.md")
     open(fn, "w", encoding="utf-8").write(report)
